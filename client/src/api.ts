@@ -33,7 +33,11 @@ export async function api<T>(path: string, options: { method?: string; body?: un
   }
 
   if (res.status === 204) return undefined as T;
-  const data = await res.json().catch(() => ({}));
+  // A cancelled request must stay cancelled; only a body that isn't JSON becomes {}.
+  const data = await res.json().catch((err: Error) => {
+    if (err.name === 'AbortError') throw err;
+    return {};
+  });
   if (!res.ok) {
     if (res.status === 401 && !path.startsWith('/auth/')) unauthorizedListeners.forEach((l) => l());
     throw new ApiError(res.status, data.error ?? 'Something went wrong.', data.fields);

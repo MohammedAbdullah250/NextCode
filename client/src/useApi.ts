@@ -20,9 +20,12 @@ export function useApi<T>(path: string | null) {
     if (path === null) return;
     const controller = new AbortController();
     api<T>(path, { signal: controller.signal })
-      .then((data) => setResult({ key, data, error: null }))
+      .then((data) => {
+        // Ignore answers to requests that were replaced or cancelled.
+        if (!controller.signal.aborted) setResult({ key, data, error: null });
+      })
       .catch((err: Error) => {
-        if (err.name !== 'AbortError') setResult({ key, data: null, error: err.message });
+        if (!controller.signal.aborted) setResult({ key, data: null, error: err.message });
       });
     return () => controller.abort();
   }, [path, key]);
