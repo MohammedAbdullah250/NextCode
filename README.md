@@ -27,6 +27,60 @@ Households and small grocery stores often lose food, and money, because products
 - Integration with supermarket payment systems
 - Automatic food identification using cameras or AI
 
+## Running the app
+
+FreshTrack is a React web app (Vite + TypeScript) with an Express + SQLite API.
+
+```
+client/   React front end (pages, components, form validation)
+server/   Express API, SQLite database, login and role checks, expiry rules
+```
+
+**Requirements:** Node.js 20 or newer. No separate database server is needed; SQLite stores everything in one file (`server/data/freshtrack.db`), which is created automatically.
+
+```bash
+npm install          # once, from the repository root
+npm run dev          # starts the API on :4000 and the web app on http://localhost:5173
+```
+
+On first launch, open http://localhost:5173. FreshTrack asks you to create the **administrator** account. The administrator can then add staff accounts on the **Users** page.
+
+| Command | What it does |
+|---|---|
+| `npm run dev` | Run the API and web app with live reload |
+| `npm test` | Run all automated tests (server and client) |
+| `npm run lint` / `npm run typecheck` | Check code style and types |
+| `npm run build` then `npm start` | Production build, served on http://localhost:4000 |
+
+For production, copy `.env.example` to `server/.env` and set a long random `JWT_SECRET`.
+
+### Roles
+
+| Role | Can do |
+|---|---|
+| Employee | View inventory and alerts, add products, update quantities |
+| Manager | Everything above, plus expiry reports and removing (archiving) products |
+| Administrator | Everything above, plus creating accounts, changing roles, resetting passwords |
+
+### How the requirements are implemented
+
+| Item | Where |
+|---|---|
+| US-01 Add products | `client/src/pages/AddProductPage.tsx`, `POST /api/products` |
+| US-02 View inventory | `client/src/pages/InventoryPage.tsx`, `GET /api/products` |
+| US-03 Track expiry dates | Product page; expiry date is required and validated |
+| US-04 Expiry notifications | Dashboard alerts and nav badge; rule in `server/src/expiry.ts` (expires today or within 3 days) |
+| US-05 Expired products | Inventory filter "Expired" (expiry date earlier than today) |
+| US-06 Update quantities | Product page; negative values rejected; every change is logged in the stock history |
+| US-07 Reports | `client/src/pages/ReportsPage.tsx`: expired/expiring by category, discarded stock, CSV and print |
+| US-08 Manage users | `client/src/pages/UsersPage.tsx`, `/api/users` (administrators only) |
+| NFR-01 Performance | Expiry status is calculated in SQL using an index on `expiry_date` |
+| NFR-02 Availability | `GET /api/health` endpoint for uptime monitoring |
+| NFR-03 Security | All API routes except login/setup require a session; roles checked on the server; passwords hashed with bcrypt |
+| NFR-05 Retention | Products are archived, never deleted; stock history is kept |
+
+The tests in `server/test/` and `client/src/test/` are named after the acceptance criteria they check (for example `US-06 AC2 rejects a negative quantity`).
+
 ## Requirements
 
 The full requirements specification is in [`Requirements/FreshTrack_Project.docx`](Requirements/FreshTrack_Project.docx). It covers stakeholders, elicitation, user stories with acceptance criteria, non-functional requirements, conflicts, MoSCoW prioritisation and traceability.
