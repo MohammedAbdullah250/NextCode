@@ -1,8 +1,9 @@
+import { Download, Printer } from 'lucide-react';
 import { useState } from 'react';
 import { Link } from 'react-router';
+import { DateCode, DaysLeft } from '../components/Expiry';
 import { EmptyState, ErrorBanner, Loading } from '../components/Feedback';
-import { StatusBadge } from '../components/StatusBadge';
-import { describeDaysLeft, formatDate, formatQuantity } from '../format';
+import { formatDate, formatQuantity } from '../format';
 import type { ExpiryStatus } from '../types';
 import { useApi } from '../useApi';
 
@@ -36,103 +37,112 @@ export function ReportsPage() {
 
   return (
     <>
-      <div className="page-header">
-        <h1>Expiry report</h1>
+      <header className="page-header">
+        <div>
+          <p className="eyebrow">Manage</p>
+          <h1>Expiry and waste report</h1>
+        </div>
         <div className="header-actions no-print">
           <button type="button" className="btn" disabled={!data?.items.length} onClick={() => data && downloadCsv(data)}>
-            Download CSV
+            <Download size={15} aria-hidden="true" /> CSV
           </button>
           <button type="button" className="btn" onClick={() => window.print()}>
-            Print
+            <Printer size={15} aria-hidden="true" /> Print
           </button>
         </div>
-      </div>
+      </header>
 
-      <form className="card filters no-print" onSubmit={(e) => e.preventDefault()} aria-label="Report criteria">
-        <label>
-          Show
-          <select value={type} onChange={(e) => setType(e.target.value)}>
-            <option value="all">Expired and expiring</option>
-            <option value="expired">Expired only</option>
-            <option value="expiring">Expiring soon only</option>
-          </select>
-        </label>
-        <label>
-          Category
-          <select value={category} onChange={(e) => setCategory(e.target.value)}>
-            <option value="">All categories</option>
-            {categories.data?.categories.map((c) => (
-              <option key={c}>{c}</option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Waste period
-          <select value={days} onChange={(e) => setDays(e.target.value)}>
-            <option value="7">Last 7 days</option>
-            <option value="30">Last 30 days</option>
-            <option value="90">Last 90 days</option>
-          </select>
-        </label>
-      </form>
-
-      <ErrorBanner message={error} onRetry={reload} />
-      {loading && !data && <Loading label="Generating report…" />}
       {data && (
-        <>
-          <p className="muted small">
-            Generated {new Date(data.generatedAt).toLocaleString('en-GB')} · “Expiring soon” means within {data.criteria.warningDays}{' '}
-            days of {formatDate(data.criteria.today)}.
-          </p>
-          <div className="stats">
-            <div className="stat stat-expired">
-              <span className="stat-value">{data.totals.expired}</span>
-              <span className="stat-label">Expired products</span>
+        <p className="report-meta">
+          Generated {formatDate(data.criteria.today)} at{' '}
+          {new Date(data.generatedAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })} · “Expiring” means within{' '}
+          {data.criteria.warningDays} days
+        </p>
+      )}
+
+      <section className="panel">
+        <form className="filters no-print" onSubmit={(e) => e.preventDefault()} aria-label="Report criteria">
+          <label>
+            Products
+            <select value={type} onChange={(e) => setType(e.target.value)}>
+              <option value="all">Expired and expiring</option>
+              <option value="expired">Expired only</option>
+              <option value="expiring">Expiring only</option>
+            </select>
+          </label>
+          <label>
+            Category
+            <select value={category} onChange={(e) => setCategory(e.target.value)}>
+              <option value="">All categories</option>
+              {categories.data?.categories.map((c) => (
+                <option key={c}>{c}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Waste period
+            <select value={days} onChange={(e) => setDays(e.target.value)}>
+              <option value="7">Last 7 days</option>
+              <option value="30">Last 30 days</option>
+              <option value="90">Last 90 days</option>
+            </select>
+          </label>
+        </form>
+        {data && (
+          <div className="figures">
+            <div className="figure">
+              <span className="figure-value text-expired">{data.totals.expired}</span>
+              <span className="figure-label">expired products in stock</span>
             </div>
-            <div className="stat stat-expiring">
-              <span className="stat-value">{data.totals.expiring}</span>
-              <span className="stat-label">Expiring soon</span>
+            <div className="figure">
+              <span className="figure-value text-expiring">{data.totals.expiring}</span>
+              <span className="figure-label">expiring within {data.criteria.warningDays} days</span>
             </div>
-            <div className="stat">
-              <span className="stat-value">{data.discarded.length}</span>
-              <span className="stat-label">Products discarded (last {data.criteria.days} days)</span>
+            <div className="figure">
+              <span className="figure-value">{data.discarded.length}</span>
+              <span className="figure-label">products discarded, last {data.criteria.days} days</span>
             </div>
           </div>
+        )}
+      </section>
 
-          <section className="card card-flush">
-            <h2 className="card-title">Products</h2>
+      <ErrorBanner message={error} onRetry={reload} />
+      {loading && !data && <Loading label="Building report…" />}
+      {data && (
+        <>
+          <section className="panel">
+            <div className="panel-head">
+              <h2>Products to act on</h2>
+              <span className="count">{data.items.length}</span>
+            </div>
             {data.items.length === 0 ? (
-              <EmptyState title="No matching products were found.">
-                <p>Try a different report type or category.</p>
-              </EmptyState>
+              <EmptyState title="No matching products were found.">Try a different product type or category.</EmptyState>
             ) : (
               <div className="table-wrap">
                 <table>
                   <thead>
                     <tr>
                       <th scope="col">Product</th>
-                      <th scope="col">Category</th>
                       <th scope="col" className="num">
-                        Quantity
+                        In stock
                       </th>
-                      <th scope="col">Expiry date</th>
+                      <th scope="col">Use by</th>
                       <th scope="col">Status</th>
                     </tr>
                   </thead>
                   <tbody>
                     {data.items.map((i) => (
                       <tr key={i.id} className={`row-${i.status}`}>
-                        <td>
+                        <td className="cell-name">
                           <Link to={`/products/${i.id}`}>{i.name}</Link>
+                          {i.category && <span className="cell-sub">{i.category}</span>}
                         </td>
-                        <td>{i.category ?? '—'}</td>
                         <td className="num">{formatQuantity(i.quantity, i.unit)}</td>
                         <td>
-                          {formatDate(i.expiryDate)}
-                          <span className="subtext">{describeDaysLeft(i.daysLeft)}</span>
+                          <DateCode date={i.expiryDate} />
                         </td>
                         <td>
-                          <StatusBadge status={i.status} />
+                          <DaysLeft days={i.daysLeft} status={i.status} />
                         </td>
                       </tr>
                     ))}
@@ -142,19 +152,21 @@ export function ReportsPage() {
             )}
           </section>
 
-          <section className="card card-flush">
-            <h2 className="card-title">Discarded stock (last {data.criteria.days} days)</h2>
+          <section className="panel">
+            <div className="panel-head">
+              <h2>Discarded stock</h2>
+              <p>Last {data.criteria.days} days</p>
+            </div>
             {data.discarded.length === 0 ? (
-              <EmptyState title="No stock was recorded as discarded in this period." />
+              <EmptyState title="Nothing was discarded in this period." />
             ) : (
               <div className="table-wrap">
                 <table>
                   <thead>
                     <tr>
                       <th scope="col">Product</th>
-                      <th scope="col">Category</th>
                       <th scope="col" className="num">
-                        Quantity discarded
+                        Discarded
                       </th>
                       <th scope="col" className="num">
                         Times
@@ -164,9 +176,11 @@ export function ReportsPage() {
                   <tbody>
                     {data.discarded.map((d) => (
                       <tr key={d.id}>
-                        <td>{d.name}</td>
-                        <td>{d.category ?? '—'}</td>
-                        <td className="num">{formatQuantity(d.quantity, d.unit)}</td>
+                        <td className="cell-name">
+                          <Link to={`/products/${d.id}`}>{d.name}</Link>
+                          {d.category && <span className="cell-sub">{d.category}</span>}
+                        </td>
+                        <td className="num change-down">{formatQuantity(d.quantity, d.unit)}</td>
                         <td className="num">{d.entries}</td>
                       </tr>
                     ))}
@@ -184,7 +198,7 @@ export function ReportsPage() {
 function downloadCsv(report: Report) {
   const escape = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
   const rows = [
-    ['Product', 'Category', 'Quantity', 'Unit', 'Expiry date', 'Days left', 'Status'],
+    ['Product', 'Category', 'Quantity', 'Unit', 'Use-by date', 'Days left', 'Status'],
     ...report.items.map((i) => [i.name, i.category, i.quantity, i.unit, i.expiryDate, i.daysLeft, i.status]),
   ];
   const csv = rows.map((r) => r.map(escape).join(',')).join('\r\n');

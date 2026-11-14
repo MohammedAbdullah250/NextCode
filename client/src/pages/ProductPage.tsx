@@ -1,12 +1,14 @@
+import { ArrowLeft } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router';
 import { api, ApiError } from '../api';
 import { hasRole, useAuth } from '../authContext';
+import { DaysLeft, Stamp } from '../components/Expiry';
 import { Field } from '../components/Field';
-import { EmptyState, ErrorBanner, Loading } from '../components/Feedback';
-import { StatusBadge } from '../components/StatusBadge';
-import { describeDaysLeft, formatDate, formatQuantity, formatTimestamp } from '../format';
-import { MOVEMENT_REASONS, UNITS, type Movement, type Product } from '../types';
+import { EmptyState, ErrorBanner, Loading, Notice } from '../components/Feedback';
+import { describeDaysLeft, formatQuantity, formatTimestamp } from '../format';
+import { useShell } from '../shell';
+import { MOVEMENT_REASONS, STATUS_LABELS, UNITS, type Movement, type Product } from '../types';
 import { useApi } from '../useApi';
 import { validateProduct, validateQuantity, type Errors } from '../validation';
 
@@ -16,26 +18,34 @@ interface Detail {
 }
 
 const REASON_LABELS: Record<string, string> = {
-  initial: 'Added',
-  ...Object.fromEntries(MOVEMENT_REASONS.map((r) => [r.value, r.label.replace(/ \(.*\)/, '')])),
+  initial: 'Added to stock',
+  received: 'Received',
+  sold: 'Sold',
+  used: 'Used',
+  discarded: 'Discarded',
+  correction: 'Count correction',
 };
 
 export function ProductPage() {
   const { id } = useParams();
   const { user } = useAuth();
+  const { refreshSummary } = useShell();
   const navigate = useNavigate();
   const created = (useLocation().state as { created?: boolean } | null)?.created;
   const { data, error, loading, reload, setData } = useApi<Detail>(`/products/${id}`);
   const [editing, setEditing] = useState(false);
   const [notice, setNotice] = useState<string | null>(created ? 'Product saved.' : null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [confirmRemove, setConfirmRemove] = useState(false);
 
   if (loading && !data) return <Loading />;
   if (error || !data) {
     return (
       <>
+        <Link to="/inventory" className="breadcrumb">
+          <ArrowLeft size={15} aria-hidden="true" /> Inventory
+        </Link>
         <ErrorBanner message={error} onRetry={error === 'Product not found.' ? undefined : reload} />
-        <Link to="/inventory">Back to inventory</Link>
       </>
     );
   }
@@ -43,9 +53,9 @@ export function ProductPage() {
   const { product, movements } = data;
 
   async function archive() {
-    if (!window.confirm(`Remove "${product.name}" from the inventory? Its records are kept for reporting.`)) return;
     try {
       await api(`/products/${product.id}/archive`, { method: 'POST' });
+      refreshSummary();
       navigate('/inventory');
     } catch (err) {
       setNotice(null);
@@ -55,14 +65,16 @@ export function ProductPage() {
 
   return (
     <>
-      <div className="page-header">
+      <header className="page-header">
         <div>
-          <p className="breadcrumb">
-            <Link to="/inventory">Inventory</Link> /
-          </p>
-          <h1>
-            {product.name} <StatusBadge status={product.status} daysLeft={product.daysLeft} />
-          </h1>
+          <Link to="/inventory" className="breadcrumb">
+            <ArrowLeft size={15} aria-hidden="true" /> Inventory
+          </Link>
+          <p className="eyebrow">{product.category ?? 'No category'}</p>
+          <div className="page-title-row">
+            <h1>{product.name}</h1>
+            <DaysLeft days={product.daysLeft} status={product.status} />
+          </div>
         </div>
         <div className="header-actions">
           {!editing && (
@@ -70,70 +82,88 @@ export function ProductPage() {
               Edit details
             </button>
           )}
-          {hasRole(user, 'manager', 'admin') && (
-            <button type="button" className="btn btn-danger" onClick={archive}>
-              Remove
-            </button>
-          )}
+          {hasRole(user, 'manager', 'admin') &&
+            (confirmRemove ? (
+              <>
+                <button type="button" className="btn btn-danger" onClick={archive} autoFocus>
+                  Remove from inventory
+                </button>
+                <button type="button" className="btn btn-quiet" onClick={() => setConfirmRemove(false)}>
+                  Cancel
+                </button>
+              </>
+            ) : (
+              <button type="button" className="btn btn-quiet" onClick={() => setConfirmRemove(true)}>
+                Remove…
+              </button>
+            ))}
         </div>
-      </div>
+      </header>
 
-      <ErrorBanner message={actionError} />
-      {notice && (
-        <div className="banner banner-success" role="status">
-          {notice}
-        </div>
+      {confirmRemove && (
+        <Notice tone="warning">Removing hides the product from stock lists. Its history is kept for reports.</Notice>
       )}
+      <ErrorBanner message={actionError} />
+      {notice && <Notice tone="success">{notice}</Notice>}
 
-      <div className="detail-grid">
-        <section className="card">
-          {editing ? (
-            <EditDetails
-              product={product}
-              onCancel={() => setEditing(false)}
-              onSaved={(p) => {
-                setData({ ...data, product: p });
-                setEditing(false);
-                setNotice('Details updated.');
-              }}
-            />
-          ) : (
-            <dl className="details">
-              <div>
-                <dt>Quantity</dt>
-                <dd className="big">{formatQuantity(product.quantity, product.unit)}</dd>
-              </div>
-              <div>
-                <dt>Expiry date</dt>
-                <dd className="big">{formatDate(product.expiryDate)}</dd>
-                <dd className={`subtext text-${product.status}`}>{describeDaysLeft(product.daysLeft)}</dd>
-              </div>
-              <div>
-                <dt>Category</dt>
-                <dd>{product.category ?? '—'}</dd>
-              </div>
-              <div>
-                <dt>Last updated</dt>
-                <dd>{formatTimestamp(product.updatedAt)}</dd>
-              </div>
-            </dl>
-          )}
+      <div className="two-col">
+        <section className="panel">
+          <div className="panel-body">
+            {editing ? (
+              <EditDetails
+                product={product}
+                onCancel={() => setEditing(false)}
+                onSaved={(p) => {
+                  setData({ ...data, product: p });
+                  setEditing(false);
+                  setNotice('Details updated.');
+                  refreshSummary();
+                }}
+              />
+            ) : (
+              <>
+                <div className="facts">
+                  <Stamp date={product.expiryDate} status={product.status} />
+                  <div>
+                    <p className="eyebrow">In stock</p>
+                    <p className="fact-value">{product.quantity === 0 ? 'None' : formatQuantity(product.quantity, product.unit)}</p>
+                  </div>
+                </div>
+                <dl className="fact-meta">
+                  <dt>Status</dt>
+                  <dd className={`text-${product.status}`}>
+                    {STATUS_LABELS[product.status]} · {describeDaysLeft(product.daysLeft).toLowerCase()}
+                  </dd>
+                  <dt>Added</dt>
+                  <dd>{formatTimestamp(product.createdAt)}</dd>
+                  <dt>Last change</dt>
+                  <dd>{formatTimestamp(product.updatedAt)}</dd>
+                </dl>
+              </>
+            )}
+          </div>
         </section>
 
-        <section className="card">
-          <h2>Update quantity</h2>
+        <section className="panel">
+          <div className="panel-head">
+            <h2>Update quantity</h2>
+          </div>
           <UpdateQuantity
             product={product}
             onSaved={(detail) => {
               setData(detail);
-              setNotice(`Quantity updated to ${formatQuantity(detail.product.quantity, detail.product.unit)}.`);
+              setNotice(`Quantity is now ${formatQuantity(detail.product.quantity, detail.product.unit)}.`);
+              refreshSummary();
             }}
           />
         </section>
       </div>
 
-      <section className="card card-flush">
-        <h2 className="card-title">Stock history</h2>
+      <section className="panel">
+        <div className="panel-head">
+          <h2>Stock history</h2>
+          <span className="count">{movements.length}</span>
+        </div>
         {movements.length === 0 ? (
           <EmptyState title="No history yet." />
         ) : (
@@ -142,29 +172,30 @@ export function ProductPage() {
               <thead>
                 <tr>
                   <th scope="col">When</th>
-                  <th scope="col">Change</th>
+                  <th scope="col">What</th>
                   <th scope="col" className="num">
-                    Amount
+                    Change
                   </th>
                   <th scope="col" className="num">
-                    New total
+                    Balance
                   </th>
                   <th scope="col">By</th>
-                  <th scope="col">Note</th>
                 </tr>
               </thead>
               <tbody>
                 {movements.map((m) => (
                   <tr key={m.id}>
-                    <td>{formatTimestamp(m.createdAt)}</td>
-                    <td>{REASON_LABELS[m.reason] ?? m.reason}</td>
-                    <td className={`num ${m.change < 0 ? 'text-expired' : 'text-fresh'}`}>
-                      {m.change > 0 ? '+' : ''}
-                      {Number(m.change.toFixed(2))}
+                    <td className="mono small">{formatTimestamp(m.createdAt)}</td>
+                    <td>
+                      {REASON_LABELS[m.reason] ?? m.reason}
+                      {m.note && <span className="cell-sub">{m.note}</span>}
+                    </td>
+                    <td className={`num ${m.change < 0 ? 'change-down' : 'change-up'}`}>
+                      {m.change > 0 ? '+' : '−'}
+                      {Math.abs(Number(m.change.toFixed(2)))}
                     </td>
                     <td className="num">{formatQuantity(m.quantityAfter, product.unit)}</td>
                     <td>{m.username ?? '—'}</td>
-                    <td>{m.note ?? ''}</td>
                   </tr>
                 ))}
               </tbody>
@@ -185,13 +216,19 @@ function UpdateQuantity({ product, onSaved }: { product: Product; onSaved: (d: D
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  const parsed = quantity.trim() === '' ? null : Number(quantity);
+  const change = parsed !== null && Number.isFinite(parsed) && parsed >= 0 ? parsed - product.quantity : null;
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     const found: Errors = {};
     const qError = validateQuantity(quantity);
     if (qError) found.quantity = qError;
-    else if (Number(quantity) === product.quantity) found.quantity = 'Enter a quantity different from the current one.';
-    if (!reason) found.reason = 'Choose a reason for the change.';
+    else if (change === 0) found.quantity = 'That is the current quantity. Enter the new amount.';
+    else if (reason === 'received' && change !== null && change < 0) found.quantity = 'Received stock must increase the quantity.';
+    else if (['sold', 'used', 'discarded'].includes(reason) && change !== null && change > 0)
+      found.quantity = `${MOVEMENT_REASONS.find((r) => r.value === reason)!.short} stock must lower the quantity.`;
+    if (!reason) found.reason = 'Choose why the quantity changed.';
     setErrors(found);
     setMessage(null);
     if (Object.keys(found).length) return;
@@ -216,23 +253,36 @@ function UpdateQuantity({ product, onSaved }: { product: Product; onSaved: (d: D
   }
 
   return (
-    <form onSubmit={handleSubmit} noValidate>
+    <form className="panel-body" onSubmit={handleSubmit} noValidate>
       <ErrorBanner message={message} />
-      <Field label={`New quantity (${product.unit})`} error={errors.quantity} hint={`Currently ${formatQuantity(product.quantity, product.unit)}.`}>
-        <input type="number" inputMode="decimal" min={0} step="any" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
-      </Field>
-      <Field label="Reason" error={errors.reason}>
-        <select value={reason} onChange={(e) => setReason(e.target.value)}>
-          <option value="">Choose…</option>
+      <div className="field">
+        <span id="reason-label" className="field-label">
+          What happened?
+        </span>
+        <div className="reasons" role="group" aria-labelledby="reason-label">
           {MOVEMENT_REASONS.map((r) => (
-            <option key={r.value} value={r.value}>
-              {r.label}
-            </option>
+            <button key={r.value} type="button" aria-pressed={reason === r.value} onClick={() => setReason(r.value)}>
+              {r.short}
+            </button>
           ))}
-        </select>
+        </div>
+        {errors.reason && (
+          <p className="field-error" role="alert">
+            {errors.reason}
+          </p>
+        )}
+      </div>
+      <Field label={`New total (${product.unit})`} error={errors.quantity}>
+        <input type="number" inputMode="decimal" min={0} step="any" placeholder={String(product.quantity)} value={quantity} onChange={(e) => setQuantity(e.target.value)} />
       </Field>
-      <Field label="Note" error={errors.note} hint="Optional.">
-        <input value={note} onChange={(e) => setNote(e.target.value)} maxLength={200} />
+      {change !== null && change !== 0 && !errors.quantity && (
+        <p className={`change-preview ${change < 0 ? 'change-down' : 'change-up'}`} style={{ marginTop: '-0.75rem', marginBottom: '1rem' }}>
+          {change > 0 ? '+' : '−'}
+          {formatQuantity(Math.abs(change), product.unit)} from {formatQuantity(product.quantity, product.unit)}
+        </p>
+      )}
+      <Field label="Note" optional error={errors.note}>
+        <input value={note} onChange={(e) => setNote(e.target.value)} maxLength={200} placeholder="e.g. Delivery from supplier" />
       </Field>
       <button type="submit" className="btn btn-primary" disabled={busy}>
         {busy ? 'Saving…' : 'Save quantity'}
@@ -281,15 +331,17 @@ function EditDetails({ product, onCancel, onSaved }: { product: Product; onCance
 
   return (
     <form onSubmit={handleSubmit} noValidate>
-      <h2>Edit details</h2>
       <ErrorBanner message={message} />
-      <Field label="Product name *" error={errors.name}>
+      <Field label="Product name" error={errors.name}>
         <input value={form.name} onChange={update('name')} maxLength={100} />
       </Field>
-      <Field label="Category" error={errors.category}>
+      <Field label="Category" optional error={errors.category}>
         <input value={form.category} onChange={update('category')} maxLength={50} />
       </Field>
       <div className="field-row">
+        <Field label="Use-by date" error={errors.expiryDate}>
+          <input type="date" value={form.expiryDate} onChange={update('expiryDate')} />
+        </Field>
         <Field label="Unit">
           <select value={form.unit} onChange={update('unit')}>
             {UNITS.map((u) => (
@@ -297,16 +349,15 @@ function EditDetails({ product, onCancel, onSaved }: { product: Product; onCance
             ))}
           </select>
         </Field>
-        <Field label="Expiry date *" error={errors.expiryDate}>
-          <input type="date" value={form.expiryDate} onChange={update('expiryDate')} />
-        </Field>
       </div>
-      <p className="muted small">To change the quantity, use “Update quantity” so the change is recorded in the history.</p>
+      <p className="muted small" style={{ marginBottom: '1rem' }}>
+        Quantity is changed under “Update quantity” so every change is recorded.
+      </p>
       <div className="form-actions">
         <button type="submit" className="btn btn-primary" disabled={busy}>
           {busy ? 'Saving…' : 'Save changes'}
         </button>
-        <button type="button" className="btn btn-ghost" onClick={onCancel}>
+        <button type="button" className="btn btn-quiet" onClick={onCancel}>
           Cancel
         </button>
       </div>
