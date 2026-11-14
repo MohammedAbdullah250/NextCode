@@ -2,9 +2,9 @@ import { useState, type FormEvent } from 'react';
 import { Navigate, useNavigate } from 'react-router';
 import { ApiError } from '../api';
 import { useAuth } from '../authContext';
+import { AuthLayout } from '../components/AuthLayout';
 import { Field } from '../components/Field';
 import { ErrorBanner } from '../components/Feedback';
-import { AuthCard } from './LoginPage';
 
 /** First run only: create the administrator account. */
 export function SetupPage() {
@@ -45,10 +45,10 @@ export function SetupPage() {
     setForm({ ...form, [key]: e.target.value });
 
   return (
-    <AuthCard title="Set up FreshTrack" subtitle="Create the administrator account. You can add staff accounts afterwards.">
+    <AuthLayout title="Set up your shop" subtitle="Create the administrator account first. You can add staff accounts afterwards.">
       <ErrorBanner message={message} />
       <form onSubmit={handleSubmit} noValidate>
-        <Field label="Administrator username" error={errors.username}>
+        <Field label="Your username" error={errors.username}>
           <input value={form.username} onChange={update('username')} autoComplete="username" autoFocus />
         </Field>
         <Field label="Password" error={errors.password} hint="At least 8 characters.">
@@ -61,6 +61,6 @@ export function SetupPage() {
           {busy ? 'Creating account…' : 'Create administrator'}
         </button>
       </form>
-    </AuthCard>
+    </AuthLayout>
   );
 }

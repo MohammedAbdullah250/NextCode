@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router';
 import { ApiError } from '../api';
 import { useAuth } from '../authContext';
+import { AuthLayout } from '../components/AuthLayout';
 import { Field } from '../components/Field';
 import { ErrorBanner } from '../components/Feedback';
 
@@ -40,7 +41,7 @@ export function LoginPage() {
   }
 
   return (
-    <AuthCard title="Log in to FreshTrack" subtitle="Track fresh food stock and expiry dates.">
+    <AuthLayout title="Log in" subtitle="Use the account your shop administrator gave you.">
       <ErrorBanner message={message} />
       <form onSubmit={handleSubmit} noValidate>
         <Field label="Username" error={errors.username}>
@@ -53,23 +54,7 @@ export function LoginPage() {
           {busy ? 'Logging in…' : 'Log in'}
         </button>
       </form>
-      <p className="muted small">Forgot your password? Ask your administrator to reset it.</p>
-    </AuthCard>
-  );
-}
-
-export function AuthCard({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }) {
-  return (
-    <main className="auth-page">
-      <section className="card auth-card">
-        <div className="auth-brand">
-          <img src="/favicon.svg" alt="" width={40} height={40} />
-          <span>FreshTrack</span>
-        </div>
-        <h1>{title}</h1>
-        <p className="muted">{subtitle}</p>
-        {children}
-      </section>
-    </main>
+      <p className="foot">Forgot your password? Your administrator can reset it.</p>
+    </AuthLayout>
   );
 }

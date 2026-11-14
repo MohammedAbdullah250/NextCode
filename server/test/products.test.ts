@@ -102,6 +102,14 @@ describe('US-04 / US-05 expiring and expired products', () => {
     const res = await employee.get('/api/products/summary').expect(200);
     expect(res.body.counts).toEqual({ total: 4, expired: 1, expiring: 2, fresh: 1 });
     expect(res.body.attention.map((p: { name: string }) => p.name)).toEqual(['Old yoghurt', 'Bread', 'Cheese']);
+    expect(res.body.upcoming).toHaveLength(14);
+    expect(res.body.upcoming.slice(0, 5)).toEqual([
+      { date: '2026-11-14', count: 1 },
+      { date: '2026-11-15', count: 0 },
+      { date: '2026-11-16', count: 0 },
+      { date: '2026-11-17', count: 1 },
+      { date: '2026-11-18', count: 1 },
+    ]);
   });
 });
 
@@ -122,6 +130,13 @@ describe('US-06 update product quantities', () => {
     const res = await employee.post(`/api/products/${id}/quantity`).send({ quantity: -1, reason: 'sold' }).expect(400);
     expect(res.body.fields.quantity).toBe('Quantity cannot be negative.');
     expect((await employee.get(`/api/products/${id}`)).body.product.quantity).toBe(10);
+  });
+
+  it('rejects a reason that does not match the direction of the change', async () => {
+    const res = await employee.post(`/api/products/${id}/quantity`).send({ quantity: 4, reason: 'received' }).expect(400);
+    expect(res.body.fields.quantity).toBe('Received stock must increase the quantity.');
+    await employee.post(`/api/products/${id}/quantity`).send({ quantity: 12, reason: 'sold' }).expect(400);
+    await employee.post(`/api/products/${id}/quantity`).send({ quantity: 12, reason: 'correction' }).expect(200);
   });
 
   it('requires a reason', async () => {

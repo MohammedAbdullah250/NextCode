@@ -38,6 +38,7 @@ export interface Movement {
 export interface Summary {
   counts: { total: number; expired: number; expiring: number; fresh: number };
   attention: Product[];
+  upcoming: { date: string; count: number }[];
   warningDays: number;
   today: string;
 }
@@ -45,15 +46,21 @@ export interface Summary {
 export const UNITS = ['items', 'kg', 'g', 'L', 'ml', 'packs', 'boxes'] as const;
 
 export const MOVEMENT_REASONS = [
-  { value: 'received', label: 'Received (new stock)' },
-  { value: 'sold', label: 'Sold' },
-  { value: 'used', label: 'Used' },
-  { value: 'discarded', label: 'Discarded (waste)' },
-  { value: 'correction', label: 'Stock count correction' },
+  { value: 'received', short: 'Received', label: 'Received (new stock)' },
+  { value: 'sold', short: 'Sold', label: 'Sold' },
+  { value: 'used', short: 'Used', label: 'Used' },
+  { value: 'discarded', short: 'Discarded', label: 'Discarded (waste)' },
+  { value: 'correction', short: 'Recount', label: 'Stock count correction' },
 ] as const;
 
 export const ROLE_LABELS: Record<Role, string> = {
   employee: 'Employee',
   manager: 'Manager',
   admin: 'Administrator',
+};
+
+export const STATUS_LABELS: Record<ExpiryStatus, string> = {
+  expired: 'Expired',
+  expiring: 'Expiring soon',
+  fresh: 'In date',
 };

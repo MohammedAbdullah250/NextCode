@@ -1,7 +1,7 @@
 import { Link } from 'react-router';
-import { describeDaysLeft, formatDate, formatQuantity } from '../format';
+import { formatQuantity } from '../format';
 import type { Product } from '../types';
-import { StatusBadge } from './StatusBadge';
+import { DateCode, DaysLeft } from './Expiry';
 
 export function ProductTable({ products, caption }: { products: Product[]; caption: string }) {
   return (
@@ -11,28 +11,28 @@ export function ProductTable({ products, caption }: { products: Product[]; capti
         <thead>
           <tr>
             <th scope="col">Product</th>
-            <th scope="col">Category</th>
             <th scope="col" className="num">
-              Quantity
+              In stock
             </th>
-            <th scope="col">Expiry date</th>
+            <th scope="col" className="hide-sm">
+              Use by
+            </th>
             <th scope="col">Status</th>
           </tr>
         </thead>
         <tbody>
           {products.map((p) => (
-            <tr key={p.id} className={`row-${p.status}`}>
-              <td>
+            <tr key={p.id} className={`row-${p.status}${p.quantity === 0 ? ' row-empty' : ''}`}>
+              <td className="cell-name">
                 <Link to={`/products/${p.id}`}>{p.name}</Link>
+                {p.category && <span className="cell-sub">{p.category}</span>}
               </td>
-              <td>{p.category ?? <span className="muted">—</span>}</td>
-              <td className="num">{formatQuantity(p.quantity, p.unit)}</td>
-              <td>
-                {formatDate(p.expiryDate)}
-                <span className="subtext">{describeDaysLeft(p.daysLeft)}</span>
+              <td className="num">{p.quantity === 0 ? 'Out of stock' : formatQuantity(p.quantity, p.unit)}</td>
+              <td className="hide-sm">
+                <DateCode date={p.expiryDate} />
               </td>
               <td>
-                <StatusBadge status={p.status} daysLeft={p.daysLeft} />
+                <DaysLeft days={p.daysLeft} status={p.status} />
               </td>
             </tr>
           ))}

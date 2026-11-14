@@ -28,3 +28,29 @@ export function todayISO(): string {
   const now = new Date();
   return new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
 }
+
+const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+
+/** "2026-11-30" -> "30 NOV 2026", styled like a packaging date stamp. */
+export function formatDateCode(iso: string): string {
+  const [y, m, d] = iso.split('-');
+  return `${d} ${MONTHS[Number(m) - 1]} ${y}`;
+}
+
+/** Compact label for the day chip: "3d ago", "today", "tomorrow", "in 5d". */
+export function shortDaysLeft(days: number): string {
+  if (days < 0) return `${-days}d ago`;
+  if (days === 0) return 'today';
+  if (days === 1) return 'tomorrow';
+  return `in ${days}d`;
+}
+
+export function daysBetween(from: string, to: string): number {
+  return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000);
+}
+
+export function addDays(iso: string, days: number): string {
+  const d = new Date(`${iso}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}

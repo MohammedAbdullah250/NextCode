@@ -49,7 +49,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 export function RequireAuth() {
   const { user, needsSetup, checking } = useAuth();
   const location = useLocation();
-  if (checking) return <p className="page-loading">Loading FreshTrack…</p>;
+  if (checking) return <p className="loading">Loading FreshTrack…</p>;
   if (needsSetup) return <Navigate to="/setup" replace />;
   if (!user) return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />;
   return <Outlet />;
@@ -60,9 +60,11 @@ export function RequireRole({ roles }: { roles: Role[] }) {
   const { user } = useAuth();
   if (!hasRole(user, ...roles)) {
     return (
-      <section className="card">
-        <h1>Access denied</h1>
-        <p>You do not have permission to open this page. Ask your administrator if you need access.</p>
+      <section className="panel">
+        <div className="empty">
+          <p className="empty-title">You don’t have access to this page.</p>
+          <p>Ask your administrator if you need it.</p>
+        </div>
       </section>
     );
   }

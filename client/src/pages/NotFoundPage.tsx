@@ -2,11 +2,13 @@ import { Link } from 'react-router';
 
 export function NotFoundPage() {
   return (
-    <section className="card">
-      <h1>Page not found</h1>
-      <p>
-        The page you are looking for does not exist. <Link to="/">Go to the dashboard</Link>.
-      </p>
+    <section className="panel">
+      <div className="empty">
+        <p className="empty-title">This page doesn’t exist.</p>
+        <p>
+          <Link to="/">Back to Today</Link>
+        </p>
+      </div>
     </section>
   );
 }

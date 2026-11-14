@@ -1,14 +1,20 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { createMemoryRouter, RouterProvider } from 'react-router';
+import { createMemoryRouter, Outlet, RouterProvider } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AddProductPage } from '../pages/AddProductPage';
 
 function renderPage() {
+  const shell = { summary: null, refreshSummary: () => {} };
   const router = createMemoryRouter(
     [
-      { path: '/products/new', element: <AddProductPage /> },
-      { path: '/products/:id', element: <p>Product page</p> },
+      {
+        element: <Outlet context={shell} />,
+        children: [
+          { path: '/products/new', element: <AddProductPage /> },
+          { path: '/products/:id', element: <p>Product page</p> },
+        ],
+      },
     ],
     { initialEntries: ['/products/new'] },
   );
@@ -28,7 +34,7 @@ describe('AddProductPage', () => {
     expect(screen.getByText('Product name is required.')).toBeInTheDocument();
     expect(screen.getByText('Quantity is required.')).toBeInTheDocument();
     expect(screen.getByText('Expiry date is required.')).toBeInTheDocument();
-    expect(screen.getByLabelText('Product name *')).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByLabelText('Product name')).toHaveAttribute('aria-invalid', 'true');
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -39,9 +45,9 @@ describe('AddProductPage', () => {
     vi.stubGlobal('fetch', fetchMock);
     renderPage();
 
-    await userEvent.type(screen.getByLabelText('Product name *'), 'Milk');
-    await userEvent.type(screen.getByLabelText('Quantity *'), '12');
-    await userEvent.type(screen.getByLabelText('Expiry date *'), '2026-12-01');
+    await userEvent.type(screen.getByLabelText('Product name'), 'Milk');
+    await userEvent.type(screen.getByLabelText('Quantity'), '12');
+    await userEvent.type(screen.getByLabelText('Use-by date'), '2026-12-01');
     await userEvent.click(screen.getByRole('button', { name: 'Save product' }));
 
     expect(await screen.findByText('Product page')).toBeInTheDocument();

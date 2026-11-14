@@ -1,14 +1,22 @@
 import { Router } from 'express';
-import { z } from 'zod';
+import { z, ZodError } from 'zod';
 import { requireRole } from '../auth.js';
 import type { AppContext } from '../context.js';
-import { daysBetween, isValidISODate } from '../dates.js';
+import { addDays, daysBetween, isValidISODate } from '../dates.js';
 import { HttpError } from '../errors.js';
 import { warningCutoff, type ExpiryStatus } from '../expiry.js';
 
 const MAX_QUANTITY = 1_000_000;
 export const UNITS = ['items', 'kg', 'g', 'L', 'ml', 'packs', 'boxes'] as const;
 export const MOVEMENT_REASONS = ['received', 'sold', 'used', 'discarded', 'correction'] as const;
+// Which way each reason moves stock. A correction (recount) can go either way.
+const REASON_DIRECTION: Record<(typeof MOVEMENT_REASONS)[number], 1 | -1 | null> = {
+  received: 1,
+  sold: -1,
+  used: -1,
+  discarded: -1,
+  correction: null,
+};
 
 const required = (label: string) => (issue: { input: unknown }) =>
   issue.input === undefined || issue.input === null || issue.input === ''
@@ -147,6 +155,12 @@ export function productRoutes({ db, today, warningDays }: AppContext): Router {
      ORDER BY expiry_date, name LIMIT 20`,
   );
 
+  const byDay = db.prepare<{ today: string; end: string }, { date: string; count: number }>(
+    `SELECT expiry_date AS date, COUNT(*) AS count FROM products
+     WHERE archived_at IS NULL AND expiry_date BETWEEN @today AND @end
+     GROUP BY expiry_date`,
+  );
+
   function findActive(id: number) {
     const row = getById.get({ id, ...dates() });
     if (!row || row.archived_at) throw new HttpError(404, 'Product not found.');
@@ -169,12 +183,18 @@ export function productRoutes({ db, today, warningDays }: AppContext): Router {
     res.json({ products: rows.map((r) => toProduct(r, params.today)), warningDays });
   });
 
-  // US-04: dashboard counts and the products that need attention now.
+  // US-04: dashboard counts, the products that need attention now,
+  // and how many products expire on each of the next 14 days.
   router.get('/summary', (_req, res) => {
     const d = dates();
+    const perDay = new Map(byDay.all({ today: d.today, end: addDays(d.today, 13) }).map((r) => [r.date, r.count]));
     res.json({
       counts: counts.get(d),
       attention: attention.all(d).map((r) => toProduct(r, d.today)),
+      upcoming: Array.from({ length: 14 }, (_, i) => {
+        const date = addDays(d.today, i);
+        return { date, count: perDay.get(date) ?? 0 };
+      }),
       warningDays,
       today: d.today,
     });
@@ -231,6 +251,17 @@ export function productRoutes({ db, today, warningDays }: AppContext): Router {
       const current = findActive(id);
       if (current.quantity === newQuantity) {
         throw new HttpError(400, 'The new quantity is the same as the current quantity.');
+      }
+      const direction = REASON_DIRECTION[reason];
+      if (direction && Math.sign(newQuantity - current.quantity) !== direction) {
+        throw new ZodError([
+          {
+            code: 'custom',
+            path: ['quantity'],
+            input: newQuantity,
+            message: direction > 0 ? 'Received stock must increase the quantity.' : `${reason[0].toUpperCase()}${reason.slice(1)} stock must lower the quantity.`,
+          },
+        ]);
       }
       setQuantity.run({ id, quantity: newQuantity });
       insertMovement.run({
