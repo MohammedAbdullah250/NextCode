@@ -11,7 +11,6 @@ export class ApiError extends Error {
 type Listener = () => void;
 const unauthorizedListeners = new Set<Listener>();
 
-/** Lets the auth provider log the user out when the server says the session ended. */
 export function onUnauthorized(listener: Listener): () => void {
   unauthorizedListeners.add(listener);
   return () => unauthorizedListeners.delete(listener);
@@ -33,7 +32,6 @@ export async function api<T>(path: string, options: { method?: string; body?: un
   }
 
   if (res.status === 204) return undefined as T;
-  // A cancelled request must stay cancelled; only a body that isn't JSON becomes {}.
   const data = await res.json().catch((err: Error) => {
     if (err.name === 'AbortError') throw err;
     return {};

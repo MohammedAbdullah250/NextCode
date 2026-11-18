@@ -11,7 +11,7 @@
     "build": "npm run build -w server && npm run build -w client",
     "start": "npm run start -w server",
     "test": "npm test -w server && npm test -w client",
-    "lint": "npm run lint -w client",
+    "lint": "npm run lint -w server && npm run lint -w client",
     "typecheck": "npm run typecheck -w server && npm run typecheck -w client"
   },
   "engines": {

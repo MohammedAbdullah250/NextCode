@@ -4,7 +4,7 @@ import { ApiError } from '../api';
 import { useAuth } from '../authContext';
 import { AuthLayout } from '../components/AuthLayout';
 import { Field } from '../components/Field';
-import { ErrorBanner } from '../components/Feedback';
+import { ErrorBanner } from '../components/ErrorBanner';
 
 export function LoginPage() {
   const { user, needsSetup, login } = useAuth();

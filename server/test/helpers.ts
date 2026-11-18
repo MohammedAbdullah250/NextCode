@@ -4,7 +4,6 @@ import { openDatabase } from '../src/db.js';
 
 export const TODAY = '2026-11-14';
 
-/** Fresh in-memory app with a fixed "today" and an admin already set up. */
 export async function setup() {
   const db = openDatabase(':memory:');
   const app = createApp({ db, today: () => TODAY, warningDays: 3 });

@@ -8,7 +8,6 @@ interface FieldProps {
   children: ReactElement<{ id?: string; 'aria-invalid'?: boolean; 'aria-describedby'?: string }>;
 }
 
-/** Label + input + error message, wired up for screen readers. */
 export function Field({ label, optional, error, hint, children }: FieldProps) {
   const id = useId();
   const messageId = `${id}-message`;

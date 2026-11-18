@@ -8,9 +8,9 @@ describe('expiry rules', () => {
   it.each([
     ['2026-11-13', 'expired'],
     ['2026-01-01', 'expired'],
-    ['2026-11-14', 'expiring'], // expires today: not yet expired
-    ['2026-11-17', 'expiring'], // exactly 3 days away
-    ['2026-11-18', 'fresh'], // 4 days away
+    ['2026-11-14', 'expiring'],
+    ['2026-11-17', 'expiring'],
+    ['2026-11-18', 'fresh'],
   ] as const)('%s is %s', (date, status) => {
     expect(expiryStatus(date, today, 3)).toBe(status);
   });

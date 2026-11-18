@@ -1,19 +1,26 @@
 import { BarChart3, CalendarClock, CircleAlert, LogOut, Package, Plus, Sun, Users } from 'lucide-react';
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useRef } from 'react';
 import { Link, Outlet, useLocation } from 'react-router';
 import { hasRole, useAuth } from '../authContext';
 import type { ShellContext } from '../shell';
 import { ROLE_LABELS, type Summary } from '../types';
+import { ICON_MEDIUM, ICON_NAV, LOGO_SIDEBAR } from '../ui';
 import { useApi } from '../useApi';
 import { Logo } from './Logo';
+import { NavItem } from './NavItem';
+
+function inventoryStatus(pathname: string, search: string): string | null {
+  if (pathname !== '/inventory') return null;
+  return new URLSearchParams(search).get('status') ?? 'all';
+}
 
 export function Layout() {
   const { user, logout } = useAuth();
   const location = useLocation();
-  // US-04: the sidebar counts act as a constant expiry alert, refreshed on every page change.
   const summary = useApi<Summary>('/products/summary');
   const { reload } = summary;
   const firstRender = useRef(true);
+
   useEffect(() => {
     if (firstRender.current) {
       firstRender.current = false;
@@ -23,8 +30,8 @@ export function Layout() {
   }, [location.pathname, reload]);
 
   const counts = summary.data?.counts;
-  const status = location.pathname === '/inventory' ? (new URLSearchParams(location.search).get('status') ?? 'all') : null;
-  const context: ShellContext = { summary: summary.data, refreshSummary: reload };
+  const status = inventoryStatus(location.pathname, location.search);
+  const context: ShellContext = { summary: summary.data, summaryError: summary.error, refreshSummary: reload };
 
   return (
     <div className="shell">
@@ -33,25 +40,30 @@ export function Layout() {
       </a>
       <aside className="sidebar">
         <Link to="/" className="wordmark">
-          <Logo size={26} />
+          <Logo size={LOGO_SIDEBAR} />
           FreshTrack
         </Link>
 
         <Link to="/products/new" className="btn btn-primary btn-add">
-          <Plus size={16} aria-hidden="true" />
+          <Plus size={ICON_MEDIUM} aria-hidden="true" />
           Add product
         </Link>
 
         <nav className="nav" aria-label="Main">
-          <NavItem to="/" icon={<Sun size={17} />} current={location.pathname === '/'}>
+          <NavItem to="/" icon={<Sun size={ICON_NAV} />} current={location.pathname === '/'}>
             Today
           </NavItem>
-          <NavItem to="/inventory" icon={<Package size={17} />} current={status === 'all' || status === 'fresh'} count={counts?.total}>
+          <NavItem
+            to="/inventory"
+            icon={<Package size={ICON_NAV} />}
+            current={status === 'all' || status === 'fresh'}
+            count={counts?.total}
+          >
             Inventory
           </NavItem>
           <NavItem
             to="/inventory?status=expiring"
-            icon={<CalendarClock size={17} />}
+            icon={<CalendarClock size={ICON_NAV} />}
             current={status === 'expiring'}
             count={counts?.expiring}
             tone="expiring"
@@ -60,7 +72,7 @@ export function Layout() {
           </NavItem>
           <NavItem
             to="/inventory?status=expired"
-            icon={<CircleAlert size={17} />}
+            icon={<CircleAlert size={ICON_NAV} />}
             current={status === 'expired'}
             count={counts?.expired}
             tone="expired"
@@ -68,18 +80,16 @@ export function Layout() {
             Expired
           </NavItem>
 
+          {hasRole(user, 'manager', 'admin') && <span className="nav-label">Manage</span>}
           {hasRole(user, 'manager', 'admin') && (
-            <>
-              <span className="nav-label">Manage</span>
-              <NavItem to="/reports" icon={<BarChart3 size={17} />} current={location.pathname === '/reports'}>
-                Reports
-              </NavItem>
-              {hasRole(user, 'admin') && (
-                <NavItem to="/users" icon={<Users size={17} />} current={location.pathname === '/users'}>
-                  Users
-                </NavItem>
-              )}
-            </>
+            <NavItem to="/reports" icon={<BarChart3 size={ICON_NAV} />} current={location.pathname === '/reports'}>
+              Reports
+            </NavItem>
+          )}
+          {hasRole(user, 'admin') && (
+            <NavItem to="/users" icon={<Users size={ICON_NAV} />} current={location.pathname === '/users'}>
+              Users
+            </NavItem>
           )}
         </nav>
 
@@ -93,7 +103,7 @@ export function Layout() {
               <div className="account-role">{ROLE_LABELS[user.role]}</div>
             </div>
             <button type="button" className="icon-btn" onClick={logout} aria-label="Log out" title="Log out">
-              <LogOut size={17} />
+              <LogOut size={ICON_NAV} />
             </button>
           </div>
         )}
@@ -103,25 +113,5 @@ export function Layout() {
         <Outlet context={context} />
       </main>
     </div>
-  );
-}
-
-interface NavItemProps {
-  to: string;
-  icon: ReactNode;
-  current: boolean;
-  count?: number;
-  tone?: 'expired' | 'expiring';
-  children: ReactNode;
-}
-
-function NavItem({ to, icon, current, count, tone, children }: NavItemProps) {
-  const highlight = tone && count ? ` nav-count-${tone}` : '';
-  return (
-    <Link to={to} aria-current={current ? 'page' : undefined}>
-      {icon}
-      {children}
-      {count !== undefined && <span className={`nav-count${highlight}`}>{count}</span>}
-    </Link>
   );
 }

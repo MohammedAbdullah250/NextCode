@@ -1,10 +1,14 @@
 import { Search } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { Link, useSearchParams } from 'react-router';
-import { EmptyState, ErrorBanner, Loading } from '../components/Feedback';
+import { useSearchParams } from 'react-router';
+import { ErrorBanner } from '../components/ErrorBanner';
+import { InventoryEmptyState } from '../components/InventoryEmptyState';
+import { Loading } from '../components/Loading';
 import { ProductTable } from '../components/ProductTable';
+import { SEARCH_DELAY_MS } from '../limits';
 import { useShell } from '../shell';
 import type { Product } from '../types';
+import { ICON_SMALL } from '../ui';
 import { useApi } from '../useApi';
 
 const TABS = [
@@ -21,94 +25,96 @@ const TITLES: Record<string, string> = {
   fresh: 'In date',
 };
 
-// US-02 inventory, US-04 expiring and US-05 expired lists share this page.
+interface InventoryResponse {
+  products: Product[];
+  warningDays: number;
+}
+
 export function InventoryPage() {
   const { summary } = useShell();
   const [params, setParams] = useSearchParams();
   const status = params.get('status') ?? 'all';
-  const q = params.get('q') ?? '';
-  const [search, setSearch] = useState(q);
+  const query = params.get('q') ?? '';
+  const [search, setSearch] = useState(query);
+  const title = TITLES[status] ?? TITLES.all;
 
-  // Wait until the user stops typing before searching.
   useEffect(() => {
     const timer = setTimeout(() => {
-      if (search.trim() === q) return;
+      const trimmed = search.trim();
+      if (trimmed === query) return;
       setParams(
-        (p) => {
-          if (search.trim()) p.set('q', search.trim());
-          else p.delete('q');
-          return p;
+        (next) => {
+          if (trimmed) next.set('q', trimmed);
+          else next.delete('q');
+          return next;
         },
         { replace: true },
       );
-    }, 250);
+    }, SEARCH_DELAY_MS);
     return () => clearTimeout(timer);
-  }, [search, q, setParams]);
+  }, [search, query, setParams]);
 
-  const query = new URLSearchParams({ status, ...(q ? { q } : {}) });
-  const { data, error, loading, reload } = useApi<{ products: Product[]; warningDays: number }>(`/products?${query}`);
+  const apiQuery = new URLSearchParams({ status, ...(query ? { q: query } : {}) });
+  const { data, error, loading, reload } = useApi<InventoryResponse>(`/products?${apiQuery}`);
 
-  const setStatus = (value: string) =>
-    setParams((p) => {
-      if (value === 'all') p.delete('status');
-      else p.set('status', value);
-      return p;
+  function changeStatus(value: string) {
+    setParams((next) => {
+      if (value === 'all') next.delete('status');
+      else next.set('status', value);
+      return next;
     });
+  }
+
+  function renderResults(result: InventoryResponse) {
+    if (result.products.length === 0) {
+      return <InventoryEmptyState status={status} search={query} warningDays={result.warningDays} />;
+    }
+    const count = result.products.length;
+    return (
+      <>
+        <ProductTable products={result.products} caption={title} />
+        <p className="table-foot">
+          {count} {count === 1 ? 'product' : 'products'} · soonest expiry first
+        </p>
+      </>
+    );
+  }
 
   return (
     <>
       <header className="page-header">
         <div>
           <p className="eyebrow">Stock</p>
-          <h1>{TITLES[status] ?? 'Inventory'}</h1>
+          <h1>{title}</h1>
         </div>
       </header>
 
       <section className="panel">
         <div className="toolbar">
           <div className="tabs" role="group" aria-label="Filter by expiry">
-            {TABS.map((t) => (
-              <button key={t.value} type="button" aria-pressed={status === t.value} onClick={() => setStatus(t.value)}>
-                {t.label}
-                {summary && <span className="tab-count">{summary.counts[t.count]}</span>}
+            {TABS.map((tab) => (
+              <button key={tab.value} type="button" aria-pressed={status === tab.value} onClick={() => changeStatus(tab.value)}>
+                {tab.label}
+                {summary && <span className="tab-count">{summary.counts[tab.count]}</span>}
               </button>
             ))}
           </div>
           <div className="search-box">
-            <Search size={15} aria-hidden="true" />
-            <input type="search" placeholder="Search name or category" aria-label="Search products" value={search} onChange={(e) => setSearch(e.target.value)} />
+            <Search size={ICON_SMALL} aria-hidden="true" />
+            <input
+              type="search"
+              placeholder="Search name or category"
+              aria-label="Search products"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
           </div>
         </div>
 
         <ErrorBanner message={error} onRetry={reload} />
-        {loading && !data ? (
-          <Loading label="Loading inventory…" />
-        ) : data && data.products.length === 0 ? (
-          <EmptyMessage status={status} search={q} warningDays={data.warningDays} />
-        ) : (
-          data && (
-            <>
-              <ProductTable products={data.products} caption={TITLES[status] ?? 'Inventory'} />
-              <p className="table-foot">
-                {data.products.length} {data.products.length === 1 ? 'product' : 'products'} · soonest expiry first
-              </p>
-            </>
-          )
-        )}
+        {loading && !data && <Loading label="Loading inventory…" />}
+        {data && renderResults(data)}
       </section>
     </>
-  );
-}
-
-function EmptyMessage({ status, search, warningDays }: { status: string; search: string; warningDays: number }) {
-  if (search) return <EmptyState title={`No products match “${search}”.`}>Check the spelling or try the category name.</EmptyState>;
-  if (status === 'expired') return <EmptyState title="No expired products.">Nothing needs to come off the shelf.</EmptyState>;
-  if (status === 'expiring') return <EmptyState title={`Nothing expires in the next ${warningDays} days.`} />;
-  if (status === 'fresh') return <EmptyState title="No products are in date." />;
-  // US-02 AC2
-  return (
-    <EmptyState title="No products are available.">
-      <Link to="/products/new">Add a product</Link> to start your inventory.
-    </EmptyState>
   );
 }

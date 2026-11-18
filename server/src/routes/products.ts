@@ -4,13 +4,23 @@ import { requireRole } from '../auth.js';
 import type { AppContext } from '../context.js';
 import { addDays, daysBetween, isValidISODate } from '../dates.js';
 import { HttpError } from '../errors.js';
-import { warningCutoff, type ExpiryStatus } from '../expiry.js';
+import { STATUS_FILTER, STATUS_SQL, warningCutoff, type ExpiryStatus } from '../expiry.js';
+import {
+  ATTENTION_LIMIT,
+  CALENDAR_DAYS,
+  CATEGORY_MAX_LENGTH,
+  HISTORY_LIMIT,
+  MAX_QUANTITY,
+  NOTE_MAX_LENGTH,
+  PRODUCT_NAME_MAX_LENGTH,
+  SEARCH_MAX_LENGTH,
+} from '../limits.js';
 
-const MAX_QUANTITY = 1_000_000;
 export const UNITS = ['items', 'kg', 'g', 'L', 'ml', 'packs', 'boxes'] as const;
 export const MOVEMENT_REASONS = ['received', 'sold', 'used', 'discarded', 'correction'] as const;
-// Which way each reason moves stock. A correction (recount) can go either way.
-const REASON_DIRECTION: Record<(typeof MOVEMENT_REASONS)[number], 1 | -1 | null> = {
+type MovementReason = (typeof MOVEMENT_REASONS)[number];
+
+const REASON_DIRECTION: Record<MovementReason, 1 | -1 | null> = {
   received: 1,
   sold: -1,
   used: -1,
@@ -18,37 +28,41 @@ const REASON_DIRECTION: Record<(typeof MOVEMENT_REASONS)[number], 1 | -1 | null>
   correction: null,
 };
 
-const required = (label: string) => (issue: { input: unknown }) =>
-  issue.input === undefined || issue.input === null || issue.input === ''
-    ? `${label} is required.`
-    : `${label} is not valid.`;
+function requiredMessage(label: string) {
+  return (issue: { input: unknown }) =>
+    issue.input === undefined || issue.input === null || issue.input === ''
+      ? `${label} is required.`
+      : `${label} is not valid.`;
+}
+
+function optionalText(label: string, maxLength: number) {
+  return z
+    .string()
+    .trim()
+    .max(maxLength, `${label} must be at most ${maxLength} characters.`)
+    .nullish()
+    .transform((value) => value || null);
+}
 
 const quantity = z
-  .number({ error: required('Quantity') })
+  .number({ error: requiredMessage('Quantity') })
   .finite({ error: 'Quantity must be a number.' })
   .min(0, 'Quantity cannot be negative.')
   .max(MAX_QUANTITY, `Quantity must be at most ${MAX_QUANTITY.toLocaleString('en')}.`);
 
-const expiryDate = z
-  .string({ error: required('Expiry date') })
-  .trim()
-  .min(1, 'Expiry date is required.')
-  .refine(isValidISODate, 'Enter a real date (YYYY-MM-DD).');
-
 const productFields = {
   name: z
-    .string({ error: required('Product name') })
+    .string({ error: requiredMessage('Product name') })
     .trim()
     .min(1, 'Product name is required.')
-    .max(100, 'Product name must be at most 100 characters.'),
-  category: z
-    .string()
-    .trim()
-    .max(50, 'Category must be at most 50 characters.')
-    .nullish()
-    .transform((v) => v || null),
+    .max(PRODUCT_NAME_MAX_LENGTH, `Product name must be at most ${PRODUCT_NAME_MAX_LENGTH} characters.`),
+  category: optionalText('Category', CATEGORY_MAX_LENGTH),
   unit: z.enum(UNITS, { error: 'Choose a unit from the list.' }).default('items'),
-  expiryDate,
+  expiryDate: z
+    .string({ error: requiredMessage('Expiry date') })
+    .trim()
+    .min(1, 'Expiry date is required.')
+    .refine(isValidISODate, 'Enter a real date (YYYY-MM-DD).'),
 };
 
 const createSchema = z.object({ ...productFields, quantity });
@@ -56,16 +70,11 @@ const editSchema = z.object(productFields).partial();
 const quantitySchema = z.object({
   quantity,
   reason: z.enum(MOVEMENT_REASONS, { error: 'Choose a reason for the change.' }),
-  note: z
-    .string()
-    .trim()
-    .max(200, 'Note must be at most 200 characters.')
-    .nullish()
-    .transform((v) => v || null),
+  note: optionalText('Note', NOTE_MAX_LENGTH),
 });
 const listQuerySchema = z.object({
   status: z.enum(['all', 'expired', 'expiring', 'fresh']).default('all'),
-  q: z.string().trim().max(100).optional(),
+  q: z.string().trim().max(SEARCH_MAX_LENGTH).optional(),
 });
 const idSchema = z.coerce.number().int().positive();
 
@@ -100,29 +109,26 @@ function toProduct(row: ProductRow, today: string) {
 
 export type Product = ReturnType<typeof toProduct>;
 
-/**
- * Status is worked out in SQL (not in JS after loading everything) so filters
- * use the expiry_date index and the inventory page stays fast (NFR-01, Conflict 1).
- */
-export const STATUS_SQL = `
-  CASE WHEN expiry_date < @today THEN 'expired'
-       WHEN expiry_date <= @cutoff THEN 'expiring'
-       ELSE 'fresh' END`;
+function checkReasonDirection(reason: MovementReason, change: number): void {
+  const direction = REASON_DIRECTION[reason];
+  if (!direction || Math.sign(change) === direction) return;
+  const label = `${reason[0].toUpperCase()}${reason.slice(1)}`;
+  const message = direction > 0 ? `${label} stock must increase the quantity.` : `${label} stock must lower the quantity.`;
+  throw new ZodError([{ code: 'custom', path: ['quantity'], input: change, message }]);
+}
 
-const STATUS_FILTER: Record<ExpiryStatus, string> = {
-  expired: 'expiry_date < @today',
-  expiring: 'expiry_date >= @today AND expiry_date <= @cutoff',
-  fresh: 'expiry_date > @cutoff',
-};
+function escapeLike(text: string): string {
+  return text.replace(/[\\%_]/g, '\\$&');
+}
 
 export function productRoutes({ db, today, warningDays }: AppContext): Router {
   const router = Router();
-  const dates = () => {
-    const t = today();
-    return { today: t, cutoff: warningCutoff(t, warningDays) };
+  const currentDates = () => {
+    const day = today();
+    return { today: day, cutoff: warningCutoff(day, warningDays) };
   };
 
-  const getById = db.prepare<{ id: number; today: string; cutoff: string }, ProductRow>(
+  const findById = db.prepare<{ id: number; today: string; cutoff: string }, ProductRow>(
     `SELECT *, ${STATUS_SQL} AS status FROM products WHERE id = @id`,
   );
   const insertProduct = db.prepare(
@@ -133,47 +139,59 @@ export function productRoutes({ db, today, warningDays }: AppContext): Router {
     `INSERT INTO stock_movements (product_id, change, quantity_after, reason, note, user_id)
      VALUES (@productId, @change, @quantityAfter, @reason, @note, @userId)`,
   );
-  const setQuantity = db.prepare(
+  const updateQuantity = db.prepare(
     "UPDATE products SET quantity = @quantity, updated_at = datetime('now') WHERE id = @id",
   );
+  const archiveProduct = db.prepare("UPDATE products SET archived_at = datetime('now') WHERE id = ?");
   const listMovements = db.prepare(
     `SELECT m.id, m.change, m.quantity_after AS quantityAfter, m.reason, m.note,
             m.created_at AS createdAt, u.username
      FROM stock_movements m LEFT JOIN users u ON u.id = m.user_id
-     WHERE m.product_id = ? ORDER BY m.id DESC LIMIT 50`,
+     WHERE m.product_id = @id ORDER BY m.id DESC LIMIT @limit`,
   );
-  const counts = db.prepare<{ today: string; cutoff: string }, Record<ExpiryStatus | 'total', number>>(
+  const countByStatus = db.prepare<{ today: string; cutoff: string }, Record<ExpiryStatus | 'total', number>>(
     `SELECT COUNT(*) AS total,
-            COALESCE(SUM(expiry_date < @today), 0) AS expired,
-            COALESCE(SUM(expiry_date >= @today AND expiry_date <= @cutoff), 0) AS expiring,
-            COALESCE(SUM(expiry_date > @cutoff), 0) AS fresh
+            COALESCE(SUM(${STATUS_FILTER.expired}), 0) AS expired,
+            COALESCE(SUM(${STATUS_FILTER.expiring}), 0) AS expiring,
+            COALESCE(SUM(${STATUS_FILTER.fresh}), 0) AS fresh
      FROM products WHERE archived_at IS NULL`,
   );
-  const attention = db.prepare<{ today: string; cutoff: string }, ProductRow>(
+  const listAttention = db.prepare<{ today: string; cutoff: string; limit: number }, ProductRow>(
     `SELECT *, ${STATUS_SQL} AS status FROM products
      WHERE archived_at IS NULL AND expiry_date <= @cutoff
-     ORDER BY expiry_date, name LIMIT 20`,
+     ORDER BY expiry_date, name LIMIT @limit`,
   );
-
-  const byDay = db.prepare<{ today: string; end: string }, { date: string; count: number }>(
+  const countByDay = db.prepare<{ today: string; end: string }, { date: string; count: number }>(
     `SELECT expiry_date AS date, COUNT(*) AS count FROM products
      WHERE archived_at IS NULL AND expiry_date BETWEEN @today AND @end
      GROUP BY expiry_date`,
   );
 
   function findActive(id: number) {
-    const row = getById.get({ id, ...dates() });
+    const row = findById.get({ id, ...currentDates() });
     if (!row || row.archived_at) throw new HttpError(404, 'Product not found.');
     return row;
   }
 
-  // US-02 / US-04 / US-05: list products, optionally filtered by expiry status.
+  function findMovements(id: number) {
+    return listMovements.all({ id, limit: HISTORY_LIMIT });
+  }
+
+  function buildCalendar(day: string) {
+    const end = addDays(day, CALENDAR_DAYS - 1);
+    const perDay = new Map(countByDay.all({ today: day, end }).map((r) => [r.date, r.count]));
+    return Array.from({ length: CALENDAR_DAYS }, (_, offset) => {
+      const date = addDays(day, offset);
+      return { date, count: perDay.get(date) ?? 0 };
+    });
+  }
+
   router.get('/', (req, res) => {
     const { status, q } = listQuerySchema.parse(req.query);
     const where = ['archived_at IS NULL'];
     if (status !== 'all') where.push(STATUS_FILTER[status]);
     if (q) where.push("(name LIKE @q ESCAPE '\\' OR category LIKE @q ESCAPE '\\')");
-    const params = { ...dates(), q: `%${q?.replace(/[\\%_]/g, '\\$&') ?? ''}%` };
+    const params = { ...currentDates(), q: `%${escapeLike(q ?? '')}%` };
     const rows = db
       .prepare<typeof params, ProductRow>(
         `SELECT *, ${STATUS_SQL} AS status FROM products
@@ -183,29 +201,22 @@ export function productRoutes({ db, today, warningDays }: AppContext): Router {
     res.json({ products: rows.map((r) => toProduct(r, params.today)), warningDays });
   });
 
-  // US-04: dashboard counts, the products that need attention now,
-  // and how many products expire on each of the next 14 days.
   router.get('/summary', (_req, res) => {
-    const d = dates();
-    const perDay = new Map(byDay.all({ today: d.today, end: addDays(d.today, 13) }).map((r) => [r.date, r.count]));
+    const dates = currentDates();
     res.json({
-      counts: counts.get(d),
-      attention: attention.all(d).map((r) => toProduct(r, d.today)),
-      upcoming: Array.from({ length: 14 }, (_, i) => {
-        const date = addDays(d.today, i);
-        return { date, count: perDay.get(date) ?? 0 };
-      }),
+      counts: countByStatus.get(dates),
+      attention: listAttention.all({ ...dates, limit: ATTENTION_LIMIT }).map((r) => toProduct(r, dates.today)),
+      upcoming: buildCalendar(dates.today),
       warningDays,
-      today: d.today,
+      today: dates.today,
     });
   });
 
   router.get('/:id', (req, res) => {
     const row = findActive(idSchema.parse(req.params.id));
-    res.json({ product: toProduct(row, dates().today), movements: listMovements.all(row.id) });
+    res.json({ product: toProduct(row, currentDates().today), movements: findMovements(row.id) });
   });
 
-  // US-01: add a product; its starting quantity is the first history entry.
   router.post('/', (req, res) => {
     const input = createSchema.parse(req.body);
     const userId = req.user!.id;
@@ -221,66 +232,48 @@ export function productRoutes({ db, today, warningDays }: AppContext): Router {
       });
       return productId;
     })();
-    res.status(201).json({ product: toProduct(getById.get({ id, ...dates() })!, dates().today) });
+    res.status(201).json({ product: toProduct(findActive(id), currentDates().today) });
   });
 
   router.patch('/:id', (req, res) => {
     const id = idSchema.parse(req.params.id);
     const input = editSchema.parse(req.body);
     findActive(id);
-    const columns: Record<string, unknown> = {};
-    if (input.name !== undefined) columns.name = input.name;
-    if (input.category !== undefined) columns.category = input.category;
-    if (input.unit !== undefined) columns.unit = input.unit;
-    if (input.expiryDate !== undefined) columns.expiry_date = input.expiryDate;
-    if (Object.keys(columns).length > 0) {
-      const sets = Object.keys(columns).map((c) => `${c} = @${c}`);
-      db.prepare(`UPDATE products SET ${sets.join(', ')}, updated_at = datetime('now') WHERE id = @id`).run({
-        ...columns,
+    const columns: Record<string, unknown> = {
+      name: input.name,
+      category: input.category,
+      unit: input.unit,
+      expiry_date: input.expiryDate,
+    };
+    const changed = Object.keys(columns).filter((column) => columns[column] !== undefined);
+    if (changed.length > 0) {
+      const assignments = changed.map((column) => `${column} = @${column}`).join(', ');
+      db.prepare(`UPDATE products SET ${assignments}, updated_at = datetime('now') WHERE id = @id`).run({
+        ...Object.fromEntries(changed.map((column) => [column, columns[column]])),
         id,
       });
     }
-    res.json({ product: toProduct(findActive(id), dates().today) });
+    res.json({ product: toProduct(findActive(id), currentDates().today) });
   });
 
-  // US-06: set a new quantity; the change and the history entry are saved together.
   router.post('/:id/quantity', (req, res) => {
     const id = idSchema.parse(req.params.id);
     const { quantity: newQuantity, reason, note } = quantitySchema.parse(req.body);
     db.transaction(() => {
       const current = findActive(id);
-      if (current.quantity === newQuantity) {
-        throw new HttpError(400, 'The new quantity is the same as the current quantity.');
-      }
-      const direction = REASON_DIRECTION[reason];
-      if (direction && Math.sign(newQuantity - current.quantity) !== direction) {
-        throw new ZodError([
-          {
-            code: 'custom',
-            path: ['quantity'],
-            input: newQuantity,
-            message: direction > 0 ? 'Received stock must increase the quantity.' : `${reason[0].toUpperCase()}${reason.slice(1)} stock must lower the quantity.`,
-          },
-        ]);
-      }
-      setQuantity.run({ id, quantity: newQuantity });
-      insertMovement.run({
-        productId: id,
-        change: newQuantity - current.quantity,
-        quantityAfter: newQuantity,
-        reason,
-        note,
-        userId: req.user!.id,
-      });
+      const change = newQuantity - current.quantity;
+      if (change === 0) throw new HttpError(400, 'The new quantity is the same as the current quantity.');
+      checkReasonDirection(reason, change);
+      updateQuantity.run({ id, quantity: newQuantity });
+      insertMovement.run({ productId: id, change, quantityAfter: newQuantity, reason, note, userId: req.user!.id });
     })();
-    res.json({ product: toProduct(findActive(id), dates().today), movements: listMovements.all(id) });
+    res.json({ product: toProduct(findActive(id), currentDates().today), movements: findMovements(id) });
   });
 
-  // NFR-05: archive instead of delete so the record and its history are retained.
   router.post('/:id/archive', requireRole('manager', 'admin'), (req, res) => {
     const id = idSchema.parse(req.params.id);
     findActive(id);
-    db.prepare("UPDATE products SET archived_at = datetime('now') WHERE id = ?").run(id);
+    archiveProduct.run(id);
     res.status(204).end();
   });
 

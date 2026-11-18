@@ -4,18 +4,25 @@ import { z } from 'zod';
 import { clearSessionCookie, requireAuth, setSessionCookie, type AuthUser } from '../auth.js';
 import type { AppContext } from '../context.js';
 import { HttpError } from '../errors.js';
+import {
+  PASSWORD_HASH_ROUNDS,
+  PASSWORD_MAX_LENGTH,
+  PASSWORD_MIN_LENGTH,
+  USERNAME_MAX_LENGTH,
+  USERNAME_MIN_LENGTH,
+} from '../limits.js';
 
 export const credentialsSchema = z.object({
   username: z
     .string()
     .trim()
-    .min(3, 'Username must be at least 3 characters.')
-    .max(40, 'Username must be at most 40 characters.')
+    .min(USERNAME_MIN_LENGTH, `Username must be at least ${USERNAME_MIN_LENGTH} characters.`)
+    .max(USERNAME_MAX_LENGTH, `Username must be at most ${USERNAME_MAX_LENGTH} characters.`)
     .regex(/^[a-zA-Z0-9._-]+$/, 'Use letters, numbers, dots, dashes or underscores only.'),
   password: z
     .string()
-    .min(8, 'Password must be at least 8 characters.')
-    .max(200, 'Password is too long.'),
+    .min(PASSWORD_MIN_LENGTH, `Password must be at least ${PASSWORD_MIN_LENGTH} characters.`)
+    .max(PASSWORD_MAX_LENGTH, 'Password is too long.'),
 });
 
 const loginSchema = z.object({
@@ -34,7 +41,6 @@ export function authRoutes({ db }: AppContext): Router {
     "INSERT INTO users (username, password_hash, role) VALUES (?, ?, 'admin')",
   );
 
-  // The first person to open a fresh install creates the administrator account.
   router.get('/setup-status', (_req, res) => {
     res.json({ needsSetup: countUsers.get()!.n === 0 });
   });
@@ -43,7 +49,7 @@ export function authRoutes({ db }: AppContext): Router {
     const { username, password } = credentialsSchema.parse(req.body);
     const user = db.transaction(() => {
       if (countUsers.get()!.n > 0) throw new HttpError(409, 'FreshTrack has already been set up.');
-      const result = insertAdmin.run(username, bcrypt.hashSync(password, 10));
+      const result = insertAdmin.run(username, bcrypt.hashSync(password, PASSWORD_HASH_ROUNDS));
       return { id: Number(result.lastInsertRowid), username, role: 'admin' as const };
     })();
     setSessionCookie(res, user);
@@ -53,7 +59,6 @@ export function authRoutes({ db }: AppContext): Router {
   router.post('/login', (req, res) => {
     const { username, password } = loginSchema.parse(req.body);
     const row = findByUsername.get(username);
-    // Same message for unknown user and wrong password so usernames can't be guessed.
     if (!row || !bcrypt.compareSync(password, row.password_hash)) {
       throw new HttpError(401, 'Incorrect username or password.');
     }

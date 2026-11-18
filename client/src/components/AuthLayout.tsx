@@ -1,22 +1,35 @@
 import type { ReactNode } from 'react';
 import { addDays, todayISO } from '../format';
-import { Stamp } from './Expiry';
+import { LOGO_AUTH } from '../ui';
 import { Logo } from './Logo';
+import { Stamp } from './Stamp';
 
-export function AuthLayout({ title, subtitle, children }: { title: string; subtitle: string; children: ReactNode }) {
+const SAMPLE_STAMPS = [
+  { offset: 12, status: 'fresh' },
+  { offset: 2, status: 'expiring' },
+  { offset: -1, status: 'expired' },
+] as const;
+
+interface AuthLayoutProps {
+  title: string;
+  subtitle: string;
+  children: ReactNode;
+}
+
+export function AuthLayout({ title, subtitle, children }: AuthLayoutProps) {
   const today = todayISO();
   return (
     <div className="auth">
       <aside className="auth-side">
         <span className="wordmark">
-          <Logo size={28} />
+          <Logo size={LOGO_AUTH} />
           FreshTrack
         </span>
         <blockquote>Know what’s going out of date before it costs you.</blockquote>
         <div className="auth-stamps" aria-hidden="true">
-          <Stamp date={addDays(today, 12)} status="fresh" />
-          <Stamp date={addDays(today, 2)} status="expiring" />
-          <Stamp date={addDays(today, -1)} status="expired" />
+          {SAMPLE_STAMPS.map((sample) => (
+            <Stamp key={sample.status} date={addDays(today, sample.offset)} status={sample.status} />
+          ))}
         </div>
       </aside>
       <main className="auth-main">
