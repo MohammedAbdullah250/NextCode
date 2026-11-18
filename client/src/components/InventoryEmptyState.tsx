@@ -8,7 +8,14 @@ interface InventoryEmptyStateProps {
 }
 
 export function InventoryEmptyState({ status, search, warningDays }: InventoryEmptyStateProps) {
-  if (search) return <EmptyState title={`No products match “${search}”.`}>Check the spelling or try the category name.</EmptyState>;
+  if (search) {
+    return (
+      <EmptyState title={`No products in this view match “${search}”.`}>
+        Check the spelling, try a category name, or select All to search
+        across all expiry statuses.
+      </EmptyState>
+    );
+  }
   if (status === 'expired') return <EmptyState title="No expired products.">Nothing needs to come off the shelf.</EmptyState>;
   if (status === 'expiring') return <EmptyState title={`Nothing expires in the next ${warningDays} days.`} />;
   if (status === 'fresh') return <EmptyState title="No products are in date." />;
