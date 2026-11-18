@@ -1,7 +1,8 @@
 import { Link } from 'react-router';
 import { formatQuantity } from '../format';
 import type { Product } from '../types';
-import { DateCode, DaysLeft } from './Expiry';
+import { DateCode } from './DateCode';
+import { DaysLeft } from './DaysLeft';
 
 export function ProductTable({ products, caption }: { products: Product[]; caption: string }) {
   return (

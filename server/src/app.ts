@@ -7,6 +7,7 @@ import { config } from './config.js';
 import type { AppContext } from './context.js';
 import { todayISO } from './dates.js';
 import type { DB } from './db.js';
+import { JSON_BODY_LIMIT } from './limits.js';
 import { errorHandler, HttpError } from './errors.js';
 import { authRoutes } from './routes/auth.js';
 import { productRoutes } from './routes/products.js';
@@ -17,17 +18,16 @@ interface AppOptions {
   db: DB;
   today?: () => string;
   warningDays?: number;
-  /** Folder with the built React app to serve, if any. */
   clientDir?: string;
 }
 
 export function createApp({ db, today = () => todayISO(), warningDays = config.expiryWarningDays, clientDir }: AppOptions) {
   const ctx: AppContext = { db, today, warningDays };
   const app = express();
-  const auth = requireAuth(db);
+  const requireSession = requireAuth(db);
 
   app.disable('x-powered-by');
-  app.use(express.json({ limit: '100kb' }));
+  app.use(express.json({ limit: JSON_BODY_LIMIT }));
   app.use(cookieParser());
   app.use((_req, res, next) => {
     res.set({
@@ -38,16 +38,15 @@ export function createApp({ db, today = () => todayISO(), warningDays = config.e
     next();
   });
 
-  // NFR-02: simple endpoint for uptime monitoring.
   app.get('/api/health', (_req, res) => {
     db.prepare('SELECT 1').get();
     res.json({ status: 'ok' });
   });
 
   app.use('/api/auth', authRoutes(ctx));
-  app.use('/api/products', auth, productRoutes(ctx));
-  app.use('/api/reports', auth, requireRole('manager', 'admin'), reportRoutes(ctx));
-  app.use('/api/users', auth, requireRole('admin'), userRoutes(ctx));
+  app.use('/api/products', requireSession, productRoutes(ctx));
+  app.use('/api/reports', requireSession, requireRole('manager', 'admin'), reportRoutes(ctx));
+  app.use('/api/users', requireSession, requireRole('admin'), userRoutes(ctx));
   app.use('/api', () => {
     throw new HttpError(404, 'Not found.');
   });

@@ -1,36 +1,24 @@
 import { Download, Printer } from 'lucide-react';
 import { useState } from 'react';
 import { Link } from 'react-router';
-import { DateCode, DaysLeft } from '../components/Expiry';
-import { EmptyState, ErrorBanner, Loading } from '../components/Feedback';
+import { DateCode } from '../components/DateCode';
+import { DaysLeft } from '../components/DaysLeft';
+import { EmptyState } from '../components/EmptyState';
+import { ErrorBanner } from '../components/ErrorBanner';
+import { Loading } from '../components/Loading';
 import { formatDate, formatQuantity } from '../format';
-import type { ExpiryStatus } from '../types';
+import { downloadReportCsv } from '../reportCsv';
+import type { Report } from '../types';
+import { ICON_SMALL } from '../ui';
 import { useApi } from '../useApi';
 
-interface ReportItem {
-  id: number;
-  name: string;
-  category: string | null;
-  quantity: number;
-  unit: string;
-  expiryDate: string;
-  daysLeft: number;
-  status: ExpiryStatus;
-}
+const REPORT_PERIODS = [7, 30, 90];
+const DEFAULT_PERIOD = '30';
 
-interface Report {
-  generatedAt: string;
-  criteria: { type: string; category: string | null; days: number; warningDays: number; today: string };
-  totals: { expired: number; expiring: number };
-  items: ReportItem[];
-  discarded: { id: number; name: string; category: string | null; unit: string; quantity: number; entries: number }[];
-}
-
-// US-07: report of expired and expiring products, to monitor food waste.
 export function ReportsPage() {
   const [type, setType] = useState('all');
   const [category, setCategory] = useState('');
-  const [days, setDays] = useState('30');
+  const [days, setDays] = useState(DEFAULT_PERIOD);
   const categories = useApi<{ categories: string[] }>('/reports/categories');
   const query = new URLSearchParams({ type, days, ...(category ? { category } : {}) });
   const { data, error, loading, reload } = useApi<Report>(`/reports/expiry?${query}`);
@@ -43,11 +31,11 @@ export function ReportsPage() {
           <h1>Expiry and waste report</h1>
         </div>
         <div className="header-actions no-print">
-          <button type="button" className="btn" disabled={!data?.items.length} onClick={() => data && downloadCsv(data)}>
-            <Download size={15} aria-hidden="true" /> CSV
+          <button type="button" className="btn" disabled={!data?.items.length} onClick={() => data && downloadReportCsv(data)}>
+            <Download size={ICON_SMALL} aria-hidden="true" /> CSV
           </button>
           <button type="button" className="btn" onClick={() => window.print()}>
-            <Printer size={15} aria-hidden="true" /> Print
+            <Printer size={ICON_SMALL} aria-hidden="true" /> Print
           </button>
         </div>
       </header>
@@ -82,9 +70,11 @@ export function ReportsPage() {
           <label>
             Waste period
             <select value={days} onChange={(e) => setDays(e.target.value)}>
-              <option value="7">Last 7 days</option>
-              <option value="30">Last 30 days</option>
-              <option value="90">Last 90 days</option>
+              {REPORT_PERIODS.map((period) => (
+                <option key={period} value={period}>
+                  Last {period} days
+                </option>
+              ))}
             </select>
           </label>
         </form>
@@ -193,20 +183,4 @@ export function ReportsPage() {
       )}
     </>
   );
-}
-
-function downloadCsv(report: Report) {
-  const escape = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
-  const rows = [
-    ['Product', 'Category', 'Quantity', 'Unit', 'Use-by date', 'Days left', 'Status'],
-    ...report.items.map((i) => [i.name, i.category, i.quantity, i.unit, i.expiryDate, i.daysLeft, i.status]),
-  ];
-  const csv = rows.map((r) => r.map(escape).join(',')).join('\r\n');
-  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
-  const link = Object.assign(document.createElement('a'), {
-    href: url,
-    download: `freshtrack-expiry-report-${report.criteria.today}.csv`,
-  });
-  link.click();
-  URL.revokeObjectURL(url);
 }

@@ -4,14 +4,14 @@ import { ApiError } from '../api';
 import { useAuth } from '../authContext';
 import { AuthLayout } from '../components/AuthLayout';
 import { Field } from '../components/Field';
-import { ErrorBanner } from '../components/Feedback';
+import { ErrorBanner } from '../components/ErrorBanner';
+import { hasErrors, validateAccount, type Errors } from '../validation';
 
-/** First run only: create the administrator account. */
 export function SetupPage() {
   const { needsSetup, checking, setup } = useAuth();
   const navigate = useNavigate();
   const [form, setForm] = useState({ username: '', password: '', confirm: '' });
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [errors, setErrors] = useState<Errors>({});
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -19,23 +19,20 @@ export function SetupPage() {
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    const next: Record<string, string> = {};
-    if (form.username.trim().length < 3) next.username = 'Username must be at least 3 characters.';
-    if (form.password.length < 8) next.password = 'Password must be at least 8 characters.';
-    if (form.confirm !== form.password) next.confirm = 'Passwords do not match.';
-    setErrors(next);
+    const found: Errors = { ...validateAccount(form.username, form.password) };
+    if (form.confirm !== form.password) found.confirm = 'Passwords do not match.';
+    setErrors(found);
     setMessage(null);
-    if (Object.keys(next).length) return;
+    if (hasErrors(found)) return;
 
     setBusy(true);
     try {
       await setup(form.username.trim(), form.password);
       navigate('/', { replace: true });
     } catch (err) {
-      if (err instanceof ApiError) {
-        setErrors(err.fields);
-        setMessage(err.message);
-      }
+      if (!(err instanceof ApiError)) throw err;
+      setErrors(err.fields);
+      setMessage(err.message);
     } finally {
       setBusy(false);
     }

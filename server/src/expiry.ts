@@ -2,11 +2,17 @@ import { addDays, daysBetween } from './dates.js';
 
 export type ExpiryStatus = 'expired' | 'expiring' | 'fresh';
 
-/**
- * Expiry rules shared by the inventory, alerts and reports.
- * - US-05: expired when the expiry date is earlier than today.
- * - US-04: approaching expiry when it expires today or within `warningDays` days.
- */
+export const STATUS_SQL = `
+  CASE WHEN expiry_date < @today THEN 'expired'
+       WHEN expiry_date <= @cutoff THEN 'expiring'
+       ELSE 'fresh' END`;
+
+export const STATUS_FILTER: Record<ExpiryStatus, string> = {
+  expired: 'expiry_date < @today',
+  expiring: 'expiry_date >= @today AND expiry_date <= @cutoff',
+  fresh: 'expiry_date > @cutoff',
+};
+
 export function expiryStatus(expiryDate: string, today: string, warningDays: number): ExpiryStatus {
   const daysLeft = daysBetween(today, expiryDate);
   if (daysLeft < 0) return 'expired';
@@ -14,7 +20,6 @@ export function expiryStatus(expiryDate: string, today: string, warningDays: num
   return 'fresh';
 }
 
-/** Last expiry date that still counts as "approaching expiry". */
 export function warningCutoff(today: string, warningDays: number): string {
   return addDays(today, warningDays);
 }

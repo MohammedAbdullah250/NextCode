@@ -1,7 +1,9 @@
 import { createBrowserRouter } from 'react-router';
 import { RouterProvider } from 'react-router/dom';
-import { AuthProvider, RequireAuth, RequireRole } from './auth';
+import { AuthProvider } from './components/AuthProvider';
 import { Layout } from './components/Layout';
+import { RequireAuth } from './components/RequireAuth';
+import { RequireRole } from './components/RequireRole';
 import { AddProductPage } from './pages/AddProductPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { ErrorPage } from './pages/ErrorPage';
@@ -24,7 +26,6 @@ const router = createBrowserRouter([
         element: <Layout />,
         children: [
           {
-            // Keeps the sidebar visible if a single page crashes.
             errorElement: <ErrorPage />,
             children: [
               { index: true, element: <DashboardPage /> },

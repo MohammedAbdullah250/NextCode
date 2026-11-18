@@ -4,7 +4,7 @@ import Database from 'better-sqlite3';
 
 export type DB = Database.Database;
 
-const schema = `
+const SCHEMA = `
 CREATE TABLE IF NOT EXISTS users (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
   username      TEXT    NOT NULL UNIQUE COLLATE NOCASE,
@@ -51,6 +51,6 @@ export function openDatabase(file: string): DB {
   const db = new Database(file);
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
-  db.exec(schema);
+  db.exec(SCHEMA);
   return db;
 }

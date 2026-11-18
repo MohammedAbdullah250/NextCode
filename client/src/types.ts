@@ -35,12 +35,36 @@ export interface Movement {
   username: string | null;
 }
 
+export interface ProductDetail {
+  product: Product;
+  movements: Movement[];
+}
+
 export interface Summary {
   counts: { total: number; expired: number; expiring: number; fresh: number };
   attention: Product[];
   upcoming: { date: string; count: number }[];
   warningDays: number;
   today: string;
+}
+
+export interface ReportItem {
+  id: number;
+  name: string;
+  category: string | null;
+  quantity: number;
+  unit: string;
+  expiryDate: string;
+  daysLeft: number;
+  status: ExpiryStatus;
+}
+
+export interface Report {
+  generatedAt: string;
+  criteria: { type: string; category: string | null; days: number; warningDays: number; today: string };
+  totals: { expired: number; expiring: number };
+  items: ReportItem[];
+  discarded: { id: number; name: string; category: string | null; unit: string; quantity: number; entries: number }[];
 }
 
 export const UNITS = ['items', 'kg', 'g', 'L', 'ml', 'packs', 'boxes'] as const;

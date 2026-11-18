@@ -7,10 +7,6 @@ interface Result<T> {
   error: string | null;
 }
 
-/**
- * Loads `path` from the API and reloads whenever it changes. Pass null to skip.
- * While reloading, the previous data stays visible.
- */
 export function useApi<T>(path: string | null) {
   const [version, setVersion] = useState(0);
   const key = path === null ? null : `${version}:${path}`;
@@ -21,7 +17,6 @@ export function useApi<T>(path: string | null) {
     const controller = new AbortController();
     api<T>(path, { signal: controller.signal })
       .then((data) => {
-        // Ignore answers to requests that were replaced or cancelled.
         if (!controller.signal.aborted) setResult({ key, data, error: null });
       })
       .catch((err: Error) => {

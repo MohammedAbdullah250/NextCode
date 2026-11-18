@@ -3,7 +3,7 @@ import type { Summary } from './types';
 
 export interface ShellContext {
   summary: Summary | null;
-  /** Call after changing stock so the sidebar counts and alerts stay current. */
+  summaryError: string | null;
   refreshSummary: () => void;
 }
 
