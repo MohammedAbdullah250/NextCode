@@ -1,4 +1,4 @@
-import { describeDaysLeft, shortDaysLeft } from '../format';
+import { describeDaysLeft } from '../format';
 import type { ExpiryStatus } from '../types';
 
 interface DaysLeftProps {
@@ -8,9 +8,9 @@ interface DaysLeftProps {
 
 export function DaysLeft({ days, status }: DaysLeftProps) {
   const tone = status === 'expiring' && days === 0 ? 'today' : status;
-  const label = status === 'expired' ? `exp ${shortDaysLeft(days)}` : shortDaysLeft(days);
+  const label = describeDaysLeft(days);
   return (
-    <span className={`days days-${tone}`} title={describeDaysLeft(days)}>
+    <span className={`days days-${tone}`} title={label}>
       {label}
     </span>
   );
